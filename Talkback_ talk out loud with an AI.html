@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Talkback: talk out loud with an AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --case: #DCE6E0;
+    --panel: #F4F7F4;
+    --ink: #16211D;
+    --ink-soft: #52625B;
+    --line: #B7C7BF;
+    --listen: #0B7D56;
+    --speak: #C8420D;
+    --on-accent: #FFFFFF;
+    --warn: #A32218;
+
+    --font: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --case: #121A17;
+      --panel: #1B2521;
+      --ink: #E7EFEA;
+      --ink-soft: #9DB0A7;
+      --line: #33423B;
+      --listen: #35C891;
+      --speak: #FF7A45;
+      --on-accent: #10160F;
+      --warn: #FF9A8F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --case: #121A17;
+    --panel: #1B2521;
+    --ink: #E7EFEA;
+    --ink-soft: #9DB0A7;
+    --line: #33423B;
+    --listen: #35C891;
+    --speak: #FF7A45;
+    --on-accent: #10160F;
+    --warn: #FF9A8F;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    height: 100%;
+    margin: 0;
+    background: var(--case);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--listen);
+    outline-offset: 2px;
+  }
+  [hidden] { display: none !important; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  .app {
+    height: 100%;
+    min-height: 520px;
+    max-width: 32rem;
+    margin: 0 auto;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Header */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .mark {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .bar-actions { display: flex; gap: 6px; }
+  .quiet {
+    border: 1.5px solid var(--line);
+    background: none;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.86rem;
+    font-weight: 500;
+  }
+  .quiet[aria-expanded="true"] { background: var(--ink); color: var(--case); border-color: var(--ink); }
+
+  /* Settings */
+  .settings {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 12px;
+  }
+  .field { display: grid; gap: 4px; }
+  .field > span, .field > label { font-size: 0.84rem; color: var(--ink-soft); }
+  .field select {
+    width: 100%;
+    height: 40px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: var(--case);
+    padding: 0 10px;
+  }
+  .voice-row { display: flex; gap: 8px; }
+  .voice-row select { flex: 1; min-width: 0; }
+  .field input[type="range"] { width: 100%; accent-color: var(--listen); }
+  .check { display: flex; align-items: center; gap: 9px; font-size: 0.94rem; }
+  .check input { width: 18px; height: 18px; accent-color: var(--listen); }
+  .fine { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
+
+  /* Speaker grille */
+  .stage { display: grid; place-items: center; }
+  .settings:not([hidden]) ~ .stage { display: none; }
+  .grille {
+    width: clamp(104px, 21vh, 168px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+  }
+  .grille svg { display: block; width: 86%; height: auto; aspect-ratio: 1; overflow: visible; }
+  .grille circle {
+    fill: var(--ink);
+    opacity: 0.24;
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: fill 0.25s, opacity 0.25s;
+  }
+  [data-state="listening"] .grille circle {
+    fill: var(--listen);
+    opacity: 0.9;
+    animation: swell 1.5s ease-in-out infinite;
+    animation-delay: calc((1 - var(--d)) * 0.75s - 1.5s);
+  }
+  [data-state="thinking"] .grille circle {
+    opacity: 0.2;
+    animation: sweep 1.4s linear infinite;
+    animation-delay: calc(var(--a) * 1.4s - 1.4s);
+  }
+  [data-state="speaking"] .grille circle {
+    fill: var(--speak);
+    opacity: 0.9;
+    animation: throb 0.85s ease-in-out infinite;
+    animation-delay: calc(var(--d) * 0.5s - 1s);
+  }
+  @keyframes swell { 0%, 100% { transform: scale(0.7); opacity: 0.45; } 50% { transform: scale(1.25); opacity: 1; } }
+  @keyframes throb { 0%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1.45); opacity: 1; } }
+  @keyframes sweep { 0%, 60%, 100% { opacity: 0.16; } 20% { opacity: 0.95; } }
+
+  /* Conversation */
+  .log {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 2px 2px 4px 0;
+  }
+  .turn { display: grid; grid-template-columns: 4.4rem 1fr; gap: 10px; align-items: baseline; }
+  .turn .who { font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); }
+  .turn p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .turn.bot p { font-size: 1.12rem; font-weight: 500; line-height: 1.4; }
+  .turn.you p { color: var(--ink-soft); }
+  .turn.pending p { font-style: italic; opacity: 0.75; }
+
+  .notice {
+    margin: 0;
+    padding: 9px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-size: 0.9rem;
+  }
+  .notice.warn { color: var(--warn); }
+
+  /* Controls */
+  .controls { display: grid; gap: 10px; }
+  .talk {
+    height: 64px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--case);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: background 0.2s, color 0.2s;
+  }
+  [data-state="listening"] .talk { background: var(--listen); color: var(--on-accent); }
+  [data-state="speaking"] .talk { background: var(--speak); color: var(--on-accent); }
+  [data-state="thinking"] .talk { background: none; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+  .type { display: flex; gap: 8px; }
+  .type input {
+    flex: 1;
+    min-width: 0;
+    height: 46px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--panel);
+    padding: 0 16px;
+  }
+  .type input::placeholder { color: var(--ink-soft); opacity: 1; }
+  .send {
+    height: 46px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 1.5px solid var(--ink);
+    background: none;
+    font-weight: 600;
+  }
+
+  @media (min-width: 34rem) and (min-height: 44rem) {
+    .app { padding-top: 26px; padding-bottom: 22px; gap: 16px; }
+    .mark { font-size: 1.9rem; }
+  }
+  @media (max-height: 600px) {
+    .grille { width: 92px; }
+    .talk { height: 54px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="app" id="app" data-state="idle">
+  <header class="bar">
+    <h1 class="mark">Talkback</h1>
+    <div class="bar-actions">
+      <button type="button" class="quiet" id="resetBtn">Start over</button>
+      <button type="button" class="quiet" id="setBtn" aria-expanded="false" aria-controls="settings">Settings</button>
+    </div>
+  </header>
+
+  <section class="settings" id="settings" hidden aria-label="Settings">
+    <div class="field">
+      <label for="personaSel">Who you're talking to</label>
+      <select id="personaSel"></select>
+    </div>
+    <div class="field" id="voiceField">
+      <label for="voiceSel">Voice</label>
+      <div class="voice-row">
+        <select id="voiceSel"></select>
+        <button type="button" class="quiet" id="testBtn">Test voice</button>
+      </div>
+    </div>
+    <div class="field" id="rateField">
+      <label for="rateRange">Speaking speed</label>
+      <input type="range" id="rateRange" min="0.7" max="1.4" step="0.05">
+    </div>
+    <label class="check" id="aloudRow"><input type="checkbox" id="aloudChk"> Read replies aloud</label>
+    <label class="check" id="handsRow"><input type="checkbox" id="handsChk"> Keep listening after each reply</label>
+    <p class="fine" id="fineNote">Your browser turns your speech into text, and in some browsers that happens on the browser maker's servers.</p>
+  </section>
+
+  <div class="stage" aria-hidden="true">
+    <div class="grille"><svg id="grille" viewBox="-92 -92 184 184"></svg></div>
+  </div>
+
+  <section class="log" id="log" aria-label="Conversation" tabindex="0"></section>
+
+  <p class="notice" id="notice" role="status" hidden></p>
+  <p class="sr-only" id="stateLive" role="status" aria-live="polite"></p>
+
+  <div class="controls">
+    <button type="button" class="talk" id="talkBtn">Talk</button>
+    <div class="type">
+      <input type="text" id="typeBox" autocomplete="off" enterkeyhint="send"
+             placeholder="Or type here" aria-label="Type what you want to say">
+      <button type="button" class="send" id="sendBtn">Send</button>
+    </div>
+  </div>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const LANG = ((navigator.language || 'en-US').match(/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]+)*/) || ['en-US'])[0];
+  const app = $('app'), logEl = $('log'), noticeEl = $('notice');
+  const talkBtn = $('talkBtn'), typeBox = $('typeBox');
+
+  /* ---------- Who it can be ---------- */
+  const BASE =
+    'You are the voice of Talkback, a small web app where a person talks out loud with an AI. ' +
+    'Everything you write is read aloud by a speech synthesizer, and the person\'s messages usually ' +
+    'come from speech recognition. Write for the ear: plain spoken sentences, normally one to three ' +
+    'of them, with no markdown, lists, headings, emoji or stage directions, and spell out symbols and ' +
+    'abbreviations as words. If a message looks garbled by speech recognition, go with the most ' +
+    'likely meaning or ask a short clarifying question. You are an AI, and you say so plainly if ' +
+    'asked. Reply in the language the person uses.';
+  const PERSONAS = {
+    chat: {
+      label: 'Friendly chat',
+      opener: 'Hi, I\'m Talkback. Tell me what\'s on your mind and I\'ll answer out loud.',
+      rules: 'You are a warm, curious conversation partner. Talk about whatever the person brings up, ' +
+             'answer questions directly, and ask a short follow-up question when it keeps things going.'
+    },
+    interview: {
+      label: 'Interview practice',
+      opener: 'Let\'s practice. Tell me the job you\'re interviewing for and I\'ll ask the first question.',
+      rules: 'You are a friendly but realistic job interviewer running a practice interview. Ask one ' +
+             'interview question at a time for the role the person names. After each answer, give one ' +
+             'sentence of specific feedback, then ask the next question.'
+    },
+    story: {
+      label: 'Storyteller',
+      opener: 'I tell stories. Give me a place, a creature or a mood, and I\'ll begin.',
+      rules: 'You are a storyteller. Tell an original story in short installments of three or four ' +
+             'sentences, built from what the person asks for. End each installment by asking what ' +
+             'should happen next and offering two choices.'
+    }
+  };
+
+  /* ---------- Saved preferences (this browser only) ---------- */
+  const PREF_KEY = 'talkback.v1';
+  const prefs = { voice: '', rate: 1, aloud: true, handsfree: true, persona: 'chat' };
+  try {
+    const o = JSON.parse(localStorage.getItem(PREF_KEY) || 'null');
+    if (o && typeof o === 'object') {
+      if (typeof o.voice === 'string') prefs.voice = o.voice;
+      if (Number.isFinite(o.rate)) prefs.rate = Math.min(1.4, Math.max(0.7, o.rate));
+      if (typeof o.aloud === 'boolean') prefs.aloud = o.aloud;
+      if (typeof o.handsfree === 'boolean') prefs.handsfree = o.handsfree;
+      if (PERSONAS[o.persona]) prefs.persona = o.persona;
+    }
+  } catch (e) { /* storage unavailable: use defaults */ }
+  const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} };
+
+  /* ---------- Claude (asked through the page's host) ---------- */
+  const samplePromise = (window.claude && typeof window.claude.use === 'function')
+    ? window.claude.use('sample').catch(() => null)
+    : Promise.resolve(null);
+  const ERROR_COPY = {
+    not_granted: 'Talkback needs your permission to ask Claude for replies. Reload the page and allow it to keep talking.',
+    rate_limited: 'That was a lot of messages at once. Wait a moment, then try again.',
+    refused: 'Claude declined to answer that one. Try saying it a different way.',
+    session_expired: 'Your Claude session has expired. Reload the page to keep talking.',
+    prompt_too_large: 'This conversation has grown too long. Choose Start over to begin a fresh one.',
+    empty_completion: 'No reply came back. Try saying that again.'
+  };
+  const NO_CLAUDE = 'Replies come from Claude, which isn\'t reachable from this copy of the page. Open Talkback inside Claude to have a conversation.';
+
+  /* ---------- State ---------- */
+  let state = 'idle';          // idle | listening | thinking | speaking
+  let history = [];            // {role, content} turns after the instructions
+  let turnToken = 0;           // bumps whenever a turn is superseded or stopped
+  let generating = false;
+  let ctl = null;
+  let current = null;          // {el, full} for the reply being written
+  let lastWasVoice = false;
+
+  function setState(s) {
+    state = s;
+    app.dataset.state = s;
+    const canListen = mic.ok;
+    const labels = {
+      idle: 'Talk',
+      listening: 'Listening. Tap to send',
+      thinking: 'Thinking. Tap to stop',
+      speaking: canListen ? 'Tap to interrupt' : 'Stop'
+    };
+    talkBtn.textContent = labels[s];
+    talkBtn.hidden = !canListen && s === 'idle';
+    $('stateLive').textContent = { idle: '', listening: 'Listening', thinking: 'Thinking', speaking: 'Replying' }[s];
+  }
+
+  function notice(text, warn) {
+    noticeEl.textContent = text || '';
+    noticeEl.hidden = !text;
+    noticeEl.classList.toggle('warn', !!warn);
+  }
+
+  /* ---------- Conversation log ---------- */
+  function addTurn(kind, text) {
+    const el = document.createElement('div');
+    el.className = 'turn ' + kind;
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = kind.startsWith('you') ? 'You' : 'Talkback';
+    const p = document.createElement('p');
+    p.textContent = text;
+    el.append(who, p);
+    logEl.append(el);
+    toBottom();
+    return { el, p };
+  }
+  const toBottom = () => { logEl.scrollTop = logEl.scrollHeight; };
+
+  let pendingTurn = null;
+  function showPending(text) {
+    if (!pendingTurn) pendingTurn = addTurn('you pending', '');
+    pendingTurn.p.textContent = text || '…';
+    toBottom();
+  }
+  function clearPending() {
+    if (pendingTurn) { pendingTurn.el.remove(); pendingTurn = null; }
+  }
+
+  function startOver() {
+    stopAll();
+    history = [{ role: 'assistant', content: PERSONAS[prefs.persona].opener }];
+    logEl.replaceChildren();
+    addTurn('bot', PERSONAS[prefs.persona].opener);
+    notice('');
+    setState('idle');
+  }
+
+  /* ---------- Speaking ---------- */
+  const synth = ('speechSynthesis' in window && typeof window.SpeechSynthesisUtterance === 'function')
+    ? window.speechSynthesis : null;
+  let voices = [], voiceList = [];
+  const live = new Set();      // utterances queued or playing (also keeps them from being collected)
+  let primed = false, watchdog = null;
+
+  function voiceScore(v) {
+    const n = v.name.toLowerCase(), nav = LANG.toLowerCase();
+    let s = 0;
+    if (/natural|neural|premium|enhanced/.test(n)) s += 4;
+    if (/google/.test(n)) s += 2;
+    if ((v.lang || '').toLowerCase().replace('_', '-') === nav) s += 3;
+    if (v.default) s += 1;
+    return s;
+  }
+  function loadVoices() {
+    if (!synth) return;
+    voices = synth.getVoices() || [];
+    const lang = LANG.slice(0, 2).toLowerCase();
+    voiceList = voices.filter(v => (v.lang || '').toLowerCase().startsWith(lang));
+    if (!voiceList.length) voiceList = voices.slice();
+    voiceList.sort((a, b) => voiceScore(b) - voiceScore(a) || a.name.localeCompare(b.name));
+    const sel = $('voiceSel');
+    sel.replaceChildren(...voiceList.map(v => {
+      const o = document.createElement('option');
+      o.value = v.voiceURI;
+      o.textContent = v.name + ' (' + v.lang + ')';
+      return o;
+    }));
+    if (voiceList.some(v => v.voiceURI === prefs.voice)) sel.value = prefs.voice;
+    $('voiceField').hidden = !voiceList.length;
+  }
+  const pickVoice = () => voiceList.find(v => v.voiceURI === prefs.voice) || voiceList[0] || null;
+
+  // browsers only let a page speak after a tap; a silent utterance during the first tap unlocks it
+  function prime() {
+    if (!synth || primed) return;
+    primed = true;
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch (e) {}
+  }
+
+  const forSpeech = t => t.replace(/[*_#`~>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  function say(text, token) {
+    if (!synth || !prefs.aloud) return;
+    const clean = forSpeech(text);
+    if (!clean) return;
+    let u;
+    try { u = new SpeechSynthesisUtterance(clean); } catch (e) { return; }
+    const v = pickVoice();
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = prefs.rate;
+    const finish = () => {
+      if (!live.delete(u)) return;
+      if (token === turnToken) afterSpeech();
+    };
+    u.onend = finish;
+    u.onerror = finish;
+    live.add(u);
+    try { synth.speak(u); } catch (e) { finish(); return; }
+    startWatchdog();
+  }
+
+  // some browsers never report that speech finished; notice silence and move on
+  function startWatchdog() {
+    if (watchdog) return;
+    let quiet = 0;
+    watchdog = setInterval(() => {
+      if (!live.size) { clearInterval(watchdog); watchdog = null; return; }
+      quiet = (synth.speaking || synth.pending) ? 0 : quiet + 1;
+      if (quiet >= 4) { live.clear(); afterSpeech(); }
+    }, 500);
+  }
+
+  function stopSpeaking() {
+    live.clear();
+    if (synth) { try { synth.cancel(); } catch (e) {} }
+  }
+
+  // speak each sentence as soon as it has been written; returns how far we got
+  function speakReady(text, from, final, token) {
+    const rest = text.slice(from);
+    const re = /[.!?…]+["'”’)\]]*\s+|\n+/g;
+    let last = 0, m;
+    while ((m = re.exec(rest))) {
+      const end = m.index + m[0].length;
+      say(rest.slice(last, end), token);
+      last = end;
+    }
+    if (final) { say(rest.slice(last), token); return text.length; }
+    return from + last;
+  }
+
+  function afterSpeech() {
+    if (state === 'speaking' && !generating && !live.size) endTurn();
+  }
+  function endTurn() {
+    setState('idle');
+    if (prefs.handsfree && lastWasVoice && mic.ok) startListening(true);
+  }
+
+  /* ---------- Listening ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = { ok: typeof SR === 'function', rec: null };
+
+  function startListening(auto) {
+    if (!mic.ok || mic.rec) return;
+    let rec;
+    try { rec = new SR(); } catch (e) { micUnavailable(); return; }
+    mic.rec = rec;
+    let finalText = '', interim = '', err = '';
+    rec.lang = LANG;
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = e => {
+      if (mic.rec !== rec) return;
+      finalText = ''; interim = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      showPending((finalText + ' ' + interim).trim());
+    };
+    rec.onerror = e => { err = e.error || 'error'; };
+    rec.onend = () => {
+      if (mic.rec !== rec) return;      // superseded or aborted on purpose
+      mic.rec = null;
+      clearPending();
+      if (err === 'not-allowed' || err === 'service-not-allowed') { micUnavailable(); return; }
+      const said = (finalText + ' ' + interim).trim();
+      if (said) { send(said, true); return; }
+      setState('idle');
+      if (err === 'audio-capture') notice('No microphone was found. You can type instead.', true);
+      else if (err === 'network') notice('Listening needs an internet connection. Check yours, or type instead.', true);
+      else if (!auto) notice('Nothing was heard. Tap Talk and try again, a little closer to the microphone.');
+    };
+    try {
+      rec.start();
+      setState('listening');
+      showPending('');
+    } catch (e) {
+      mic.rec = null;
+      setState('idle');
+    }
+  }
+  function finishListening() {
+    if (mic.rec) { try { mic.rec.stop(); } catch (e) {} }
+  }
+  function abortListening() {
+    const rec = mic.rec;
+    mic.rec = null;
+    clearPending();
+    if (rec) { try { rec.abort(); } catch (e) {} }
+  }
+  function micUnavailable() {
+    mic.ok = false;
+    mic.rec = null;
+    setState('idle');
+    $('handsRow').hidden = true;
+    $('fineNote').hidden = true;
+    typeBox.placeholder = 'Type what you want to say';
+    notice('The microphone isn\'t available here, so type your side of the conversation.' +
+           (synth ? ' Replies are still spoken aloud.' : ''));
+    typeBox.focus({ preventScroll: true });
+  }
+
+  /* ---------- A turn of conversation ---------- */
+  function stopAll() {
+    if (current) {
+      if (current.full) history.push({ role: 'assistant', content: current.full });
+      else current.el.remove();
+      current = null;
+    }
+    turnToken++;
+    generating = false;
+    if (ctl) { ctl.abort(); ctl = null; }
+    stopSpeaking();
+    abortListening();
+  }
+
+  async function send(text, viaVoice) {
+    text = (text || '').trim();
+    if (!text) return;
+    stopAll();
+    const my = turnToken;
+    lastWasVoice = !!viaVoice;
+    notice('');
+    addTurn('you', text);
+    history.push({ role: 'user', content: text });
+    setState('thinking');
+
+    const sample = await samplePromise;
+    if (my !== turnToken) return;
+    if (!sample) { notice(NO_CLAUDE, true); setState('idle'); return; }
+
+    const persona = PERSONAS[prefs.persona];
+    const turns = [{ role: 'user', content: BASE + ' ' + persona.rules }, ...history.slice(-30)];
+    const row = addTurn('bot', '…');
+    current = { el: row.el, full: '' };
+    generating = true;
+    ctl = new AbortController();
+    let spoken = 0;
+
+    try {
+      const res = await sample(turns, {
+        cache: false,
+        modelTier: 'quick',
+        signal: ctl.signal,
+        onText: ({ text }) => {
+          if (my !== turnToken) return;
+          current.full = text;
+          row.p.textContent = text;
+          toBottom();
+          if (state === 'thinking') setState('speaking');
+          spoken = speakReady(text, spoken, false, my);
+        }
+      });
+      if (my !== turnToken) return;
+      row.p.textContent = res.text;
+      if (state === 'thinking') setState('speaking');
+      speakReady(res.text, spoken, true, my);
+      history.push({ role: 'assistant', content: res.text });
+    } catch (e) {
+      if (my !== turnToken) return;
+      const partial = (e && typeof e.text === 'string') ? e.text : '';
+      if (partial) { row.p.textContent = partial; history.push({ role: 'assistant', content: partial }); }
+      else row.el.remove();
+      const code = e && e.code;
+      if (code !== 'cancelled') notice(ERROR_COPY[code] || 'The reply didn\'t come through. Try again in a moment.', true);
+      stopSpeaking();
+      lastWasVoice = false;
+    }
+    current = null;
+    generating = false;
+    ctl = null;
+    if (!live.size) endTurn();
+  }
+
+  /* ---------- Controls ---------- */
+  talkBtn.addEventListener('click', () => {
+    prime();
+    notice('');
+    if (state === 'listening') { finishListening(); return; }
+    if (state === 'thinking') { stopAll(); setState('idle'); return; }
+    if (state === 'speaking') { stopAll(); setState('idle'); if (mic.ok) startListening(false); return; }
+    startListening(false);
+  });
+
+  function sendTyped() {
+    prime();
+    const text = typeBox.value;
+    if (!text.trim()) return;
+    typeBox.value = '';
+    send(text, false);
+  }
+  $('sendBtn').addEventListener('click', sendTyped);
+  typeBox.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendTyped(); }
+  });
+
+  $('resetBtn').addEventListener('click', startOver);
+
+  const setBtn = $('setBtn'), settings = $('settings');
+  setBtn.addEventListener('click', () => {
+    const open = settings.hidden;
+    settings.hidden = !open;
+    setBtn.setAttribute('aria-expanded', open);
+  });
+
+  const personaSel = $('personaSel');
+  for (const [key, p] of Object.entries(PERSONAS)) {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = p.label;
+    personaSel.append(o);
+  }
+  personaSel.value = prefs.persona;
+  personaSel.addEventListener('change', () => { prefs.persona = personaSel.value; savePrefs(); startOver(); });
+
+  $('voiceSel').addEventListener('change', e => { prefs.voice = e.target.value; savePrefs(); });
+  $('rateRange').value = prefs.rate;
+  $('rateRange').addEventListener('input', e => { prefs.rate = Number(e.target.value) || 1; savePrefs(); });
+  $('aloudChk').checked = prefs.aloud;
+  $('aloudChk').addEventListener('change', e => {
+    prefs.aloud = e.target.checked; savePrefs();
+    if (!prefs.aloud) { stopSpeaking(); afterSpeech(); }
+  });
+  $('handsChk').checked = prefs.handsfree;
+  $('handsChk').addEventListener('change', e => { prefs.handsfree = e.target.checked; savePrefs(); });
+  $('testBtn').addEventListener('click', () => {
+    primed = true;
+    stopSpeaking();
+    const wasAloud = prefs.aloud;
+    prefs.aloud = true;
+    say('This is how I sound.', -1);
+    prefs.aloud = wasAloud;
+  });
+
+  /* ---------- Speaker grille ---------- */
+  (function drawGrille() {
+    const NS = 'http://www.w3.org/2000/svg', svg = $('grille');
+    const step = 15, rowH = step * Math.sqrt(3) / 2, R = 84;
+    for (let row = -7; row <= 7; row++) {
+      const y = row * rowH, off = row % 2 ? step / 2 : 0;
+      for (let col = -7; col <= 7; col++) {
+        const x = col * step + off, d = Math.hypot(x, y);
+        if (d > R) continue;
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', x.toFixed(1));
+        c.setAttribute('cy', y.toFixed(1));
+        c.setAttribute('r', '3.4');
+        c.style.setProperty('--d', (d / R).toFixed(3));
+        c.style.setProperty('--a', ((Math.atan2(y, x) + Math.PI) / (2 * Math.PI)).toFixed(3));
+        svg.append(c);
+      }
+    }
+  })();
+
+  /* ---------- Start ---------- */
+  if (synth) {
+    loadVoices();
+    synth.onvoiceschanged = loadVoices;
+  } else {
+    for (const id of ['voiceField', 'rateField', 'aloudRow']) $(id).hidden = true;
+  }
+  startOver();
+  if (!mic.ok) {
+    $('handsRow').hidden = true;
+    $('fineNote').hidden = true;
+    typeBox.placeholder = 'Type what you want to say';
+    notice('This browser can\'t listen through the microphone, so type your side of the conversation.' +
+           (synth ? ' Replies are still spoken aloud.' : ''));
+  }
+  samplePromise.then(s => { if (!s) notice(NO_CLAUDE, true); });
+  window.addEventListener('pagehide', stopSpeaking);
+})();
+</script>
+</body>
+</html>
